@@ -2,9 +2,8 @@
 """
 Painel Dash para visualizar as figuras geradas pelo ECMWF:
 
-Lê arquivos PNG em:
-    pngs_ecmwf/
-com nomes do tipo:
+Lê arquivos PNG no MESMO DIRETÓRIO do app.py
+(como estão hoje no GitHub), com nomes do tipo:
     ecmwf_prec_YYYY-MM-DD.png
     ecmwf_tmin_YYYY-MM-DD.png
     ecmwf_tmax_YYYY-MM-DD.png
@@ -14,8 +13,6 @@ com nomes do tipo:
 Permite:
 - Ver mapa diário (por data e variável)
 - Ver animação ao longo dos dias para a variável escolhida (exceto acumulada)
-
-As figuras são exibidas em dcc.Graph com zoom/pan via scroll do mouse.
 """
 
 from pathlib import Path
@@ -26,12 +23,10 @@ from dash import Dash, html, dcc, Input, Output
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
-import socket
-import webbrowser
-
 # ----------------- CONFIGURAÇÕES ----------------- #
 
-IMG_DIR = Path("pngs_ecmwf")  # mesma pasta usada no figuras_ecmwf.py
+# Agora as figuras ficam no MESMO diretório do app.py
+IMG_DIR = Path(__file__).parent  # pasta onde estão app.py e os PNGs
 
 # ----------------- VARIÁVEIS DISPONÍVEIS ----------------- #
 
@@ -63,12 +58,11 @@ VAR_OPCOES = {
     },
 }
 
-
 # ----------------- FUNÇÕES AUXILIARES ----------------- #
 
 def listar_datas_disponiveis():
     """
-    Varre a pasta pngs_ecmwf e procura arquivos de precipitação diária:
+    Varre a pasta e procura arquivos de precipitação diária:
         ecmwf_prec_YYYY-MM-DD.png
     e usa o sufixo YYYY-MM-DD como 'data_tag'.
     Supõe que as demais variáveis também existem para os mesmos dias.
@@ -132,7 +126,6 @@ def construir_figura_estatica(src: str, titulo: str) -> go.Figure:
     """
     Constrói uma figura Plotly contendo UMA imagem base64,
     com eixos ocultos, mas permitindo zoom/pan.
-    (Título do Plotly removido, pois o PNG já contém o título.)
     """
     fig = go.Figure()
     if not src:
@@ -165,8 +158,8 @@ def construir_figura_estatica(src: str, titulo: str) -> go.Figure:
     fig.update_layout(
         margin=dict(l=0, r=0, t=40, b=0),
         dragmode="pan",
-        paper_bgcolor="white",   # fundo da figura branco
-        plot_bgcolor="white",    # área de plotagem branca
+        paper_bgcolor="white",
+        plot_bgcolor="white",
     )
     return fig
 
@@ -175,7 +168,6 @@ def construir_animacao(var_key: str, datas_iso: list[str]) -> go.Figure:
     """
     Constrói figura animada: cada frame é uma data da previsão.
     Usa layout.images nos frames pra trocar o mapa.
-    (Também sem título de Plotly.)
     """
     if len(datas_iso) == 0:
         return construir_figura_estatica("", "Sem dados para animar")
@@ -231,8 +223,11 @@ def construir_animacao(var_key: str, datas_iso: list[str]) -> go.Figure:
     slider_steps = [
         dict(
             method="animate",
-            args=[[f.name], {"mode": "immediate", "frame": {"duration": 500, "redraw": True},
-                             "transition": {"duration": 0}}],
+            args=[[f.name], {
+                "mode": "immediate",
+                "frame": {"duration": 500, "redraw": True},
+                "transition": {"duration": 0},
+            }],
             label=formatar_label_br(f.name),
         )
         for f in frames
@@ -281,12 +276,11 @@ def construir_animacao(var_key: str, datas_iso: list[str]) -> go.Figure:
         dragmode="pan",
         sliders=sliders,
         updatemenus=updatemenus,
-        paper_bgcolor="white",   # fundo branco
-        plot_bgcolor="white",    # remove cinza da animação também
+        paper_bgcolor="white",
+        plot_bgcolor="white",
     )
 
     return fig
-
 
 # ----------------- PREPARA LISTA DE DATAS ----------------- #
 
@@ -294,7 +288,7 @@ DATAS = listar_datas_disponiveis()
 if not DATAS:
     raise RuntimeError(
         f"Nenhuma data diária encontrada em {IMG_DIR}. "
-        f"Certifique-se de rodar primeiro o script de figuras (figuras_ecmwf.py)."
+        f"Certifique-se de que existam arquivos ecmwf_prec_YYYY-MM-DD.png."
     )
 
 DATA_DEFAULT = DATAS[-1]
@@ -302,6 +296,8 @@ DATA_DEFAULT = DATAS[-1]
 # ----------------- APP DASH ----------------- #
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+server = app.server  # <- IMPORTANTE pro Render / gunicorn
+
 app.title = "Previsão ECMWF - Painel de Mapas"
 
 app.layout = dbc.Container(
@@ -433,26 +429,8 @@ def atualizar_mapa(data_iso, var_key, modo):
         return fig
 
 
-# ----------------- MAIN ----------------- #
+# ----------------- MAIN (para rodar LOCALMENTE) ----------------- #
 
 if __name__ == "__main__":
-    port = 8050
+    app.run(host="0.0.0.0", port=8050, debug=True)
 
-    url_local = f"http://127.0.0.1:{port}/"
-    webbrowser.open(url_local)
-
-    try:
-        hostname = socket.gethostname()
-        ip_lan = socket.gethostbyname(hostname)
-    except Exception:
-        ip_lan = None
-
-    print("\n=== PAINEL ECMWF – ENDEREÇOS DE ACESSO ===")
-    print(f"Acesso local (somente este computador): {url_local}")
-    if ip_lan is not None:
-        print(f"Acesso pela rede (outros computadores): http://{ip_lan}:{port}/")
-    else:
-        print("Não consegui descobrir o IP da rede. Veja o IP da máquina e use http://SEU_IP:{port}/")
-    print("Pressione Ctrl+C no terminal para encerrar o servidor.\n")
-
-    app.run(host="0.0.0.0", port=port, debug=False)
